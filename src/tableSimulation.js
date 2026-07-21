@@ -15,20 +15,13 @@
 
 import * as THREE from 'three';
 import { analyzeBallTexture, classifyBall, hsvToHex } from './colorAnalysis.js';
+import { flipRowsVertically, buildHighlightMaskCanvas, buildDebugListHtml, wireDebugRowHover } from './pixelHighlight.js';
 
 const BALL_RADIUS = 0.5;
 const ROLL_DURATION_MS = 1500;
 const START_POS = new THREE.Vector3(3.4, BALL_RADIUS + 1.05, 0.05);
 const END_POS = new THREE.Vector3(0, BALL_RADIUS, 0);
 const BBOX_PADDING = 1.04; // a little loose, not pixel-perfect, but still a tight detector box
-
-// category codes from analyzeBallTexture's categoryMap
-const CATEGORY = { BLACK: 1, WHITE: 2, CHROMATIC: 3 };
-const HIGHLIGHT_COLOR = {
-  [CATEGORY.BLACK]: [255, 77, 77],
-  [CATEGORY.WHITE]: [77, 210, 255],
-  [CATEGORY.CHROMATIC]: [163, 255, 77],
-};
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
@@ -39,18 +32,6 @@ function linearToSrgb8(channel8) {
   const c = channel8 / 255;
   const srgb = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
   return Math.min(255, Math.max(0, Math.round(srgb * 255)));
-}
-
-/** WebGL readback rows run bottom-to-top; canvas drawing wants top-to-bottom. */
-function flipRowsVertically(typedArray, width, height, channels) {
-  const rowSize = width * channels;
-  const flipped = new typedArray.constructor(typedArray.length);
-  for (let y = 0; y < height; y++) {
-    const srcStart = y * rowSize;
-    const dstStart = (height - 1 - y) * rowSize;
-    flipped.set(typedArray.subarray(srcStart, srcStart + rowSize), dstStart);
-  }
-  return flipped;
 }
 
 /**
@@ -217,27 +198,6 @@ export function initTableSimulation({
     overlayCtx.fillText('bbox', rect.x + 4, rect.y - 6 < 10 ? rect.y + 14 : rect.y - 6);
   }
 
-  /** Builds a same-size RGBA mask canvas highlighting only pixels of one category. */
-  function buildHighlightMaskCanvas(crop, category) {
-    const { width, height, categoryMap } = crop;
-    const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = width;
-    maskCanvas.height = height;
-    const maskCtx = maskCanvas.getContext('2d');
-    const imgData = maskCtx.createImageData(width, height);
-    const [r, g, b] = HIGHLIGHT_COLOR[category];
-    for (let i = 0; i < categoryMap.length; i++) {
-      if (categoryMap[i] === category) {
-        imgData.data[i * 4] = r;
-        imgData.data[i * 4 + 1] = g;
-        imgData.data[i * 4 + 2] = b;
-        imgData.data[i * 4 + 3] = 190;
-      }
-    }
-    maskCtx.putImageData(imgData, 0, 0);
-    return maskCanvas;
-  }
-
   function redrawOverlay() {
     if (!fixedBBoxRect) return;
     drawBBoxOverlay(fixedBBoxRect);
@@ -247,49 +207,18 @@ export function initTableSimulation({
     }
   }
 
-  function highlightCategory(category) {
-    hoveredCategory = category;
-    redrawOverlay();
-  }
-
-  function clearHighlight() {
-    hoveredCategory = null;
-    redrawOverlay();
-  }
-
   /** @param {ReturnType<typeof classifyBall>} result */
   function renderSimResult(result) {
     if (!result.ok) {
       resultElement.innerHTML = `<p class="error-text">${result.reason}</p>`;
       return;
     }
-    const dominantColor = result.debug?.hue !== undefined
-      ? hsvToHex(result.debug.hue, result.debug.sat, result.debug.val)
-      : '#888';
     const swatchColor = result.debug?.hue !== undefined
-      ? dominantColor
+      ? hsvToHex(result.debug.hue, result.debug.sat, result.debug.val)
       : result.colorKey === 'black'
         ? '#111'
         : '#f5f5f5';
     const numberText = result.number === null ? '—' : `#${result.number}`;
-
-    // whiteRatio/blackRatio/chromaticRatio get a color swatch + become
-    // hoverable to highlight the matching pixels in the bbox on the left;
-    // hue/sat/val are just supporting numbers for the swatch already shown.
-    const SWATCH_FOR_KEY = { whiteRatio: '#f5f1e6', blackRatio: '#141414', chromaticRatio: dominantColor };
-    const CATEGORY_FOR_KEY = { whiteRatio: CATEGORY.WHITE, blackRatio: CATEGORY.BLACK, chromaticRatio: CATEGORY.CHROMATIC };
-
-    const debugLines = result.debug
-      ? Object.entries(result.debug)
-          .map(([key, value]) => {
-            const text = typeof value === 'number' ? value.toFixed(2) : value;
-            if (!(key in SWATCH_FOR_KEY)) return `<li>${key}: ${text}</li>`;
-            return `<li class="debug-row" data-category="${CATEGORY_FOR_KEY[key]}">
-              <span class="debug-swatch" style="background:${SWATCH_FOR_KEY[key]}"></span>${key}: ${text}
-            </li>`;
-          })
-          .join('')
-      : '';
 
     resultElement.innerHTML = `
       <div class="result-grid">
@@ -298,14 +227,13 @@ export function initTableSimulation({
           <div class="number">${numberText}</div>
           <div class="label">${result.colorLabel}・${result.typeLabel}</div>
         </div>
-        <ul class="debug-list">${debugLines}</ul>
+        <ul class="debug-list">${buildDebugListHtml(result.debug)}</ul>
       </div>
     `;
 
-    resultElement.querySelectorAll('.debug-row').forEach((row) => {
-      const category = Number(row.dataset.category);
-      row.addEventListener('mouseenter', () => highlightCategory(category));
-      row.addEventListener('mouseleave', clearHighlight);
+    wireDebugRowHover(resultElement, (category) => {
+      hoveredCategory = category;
+      redrawOverlay();
     });
   }
 

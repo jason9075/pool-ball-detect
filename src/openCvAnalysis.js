@@ -128,14 +128,13 @@ export function analyzeBallTextureCv(imageData, { trackCategories = false } = {}
     cv.bitwise_and(litMask, alphaMask, litMask);
     const litCount = cv.countNonZero(litMask);
 
+    // Low saturation alone means "neutral" within the already-lit range —
+    // no extra brightness requirement (see the matching comment in
+    // colorAnalysis.js for why that broke cue-ball detection).
     const sLow = track(new cv.Mat());
     cv.threshold(sMat, sLow, 0.32 * 255, 255, cv.THRESH_BINARY_INV);
-    const vHigh = track(new cv.Mat());
-    cv.threshold(vMat, vHigh, 0.55 * 255, 255, cv.THRESH_BINARY);
-    const whiteRaw = track(new cv.Mat());
-    cv.bitwise_and(sLow, vHigh, whiteRaw);
     const whiteMask = track(new cv.Mat());
-    cv.bitwise_and(whiteRaw, litMask, whiteMask);
+    cv.bitwise_and(sLow, litMask, whiteMask);
     const whiteCount = cv.countNonZero(whiteMask);
 
     const notWhite = track(new cv.Mat());

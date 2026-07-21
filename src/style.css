@@ -96,7 +96,8 @@ main {
   cursor: grabbing;
 }
 
-#overlay-canvas {
+#overlay-canvas,
+#ball-overlay-canvas {
   pointer-events: none;
 }
 

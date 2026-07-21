@@ -36,6 +36,7 @@
           <h2>2. 3D 旋轉預覽</h2>
           <div class="canvas-wrap">
             <canvas id="ball-canvas"></canvas>
+            <canvas id="ball-overlay-canvas"></canvas>
           </div>
           <p class="hint small" id="selection-caption">你選擇的是：#1（黃色・實色）</p>
           <p class="hint small">拖曳滾動滾輪縮放，拖曳左鍵旋轉球體。</p>
@@ -48,6 +49,7 @@
 
       <section class="panel" id="result-panel">
         <h2>3. 目前這一面的顏色分析結果</h2>
+        <p class="hint small">滑鼠移到下方 whiteRatio／blackRatio／chromaticRatio 上，可以在上方球體上高亮對應的像素區域。</p>
         <div id="result-content">
           <p class="placeholder">請先在左側圖片上點選一顆球。</p>
         </div>

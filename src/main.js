@@ -5,6 +5,14 @@ import { analyzeBallTexture, classifyBall, hsvToHex } from './colorAnalysis.js';
 import { createBallTexture, getBallDef } from './ballTexture.js';
 import { initTableSimulation } from './tableSimulation.js';
 import { initOpenCv, isOpenCvReady, analyzeBallTextureCv } from './openCvAnalysis.js';
+import {
+  flipRowsVertically,
+  buildHighlightMaskCanvas,
+  buildDebugListHtml,
+  debugListMatches,
+  updateDebugListValues,
+  wireDebugRowHover,
+} from './pixelHighlight.js';
 import hdrUrl from '../assets/cowboy_town_saloon_1k.hdr?url';
 
 // OpenCV.js is a ~10MB WASM download — start fetching it immediately so
@@ -125,11 +133,20 @@ function renderResult(result, truth) {
 
   const numberText = result.number === null ? '—' : `#${result.number}`;
   const isCorrect = result.number === truth.number;
-  const debugLines = result.debug
-    ? Object.entries(result.debug)
-        .map(([key, value]) => `<li>${key}: ${typeof value === 'number' ? value.toFixed(2) : value}</li>`)
-        .join('')
-    : '';
+
+  // This runs on a continuous ~130ms loop — rebuilding the debug list's DOM
+  // every tick would detach a row out from under the mouse before a hover
+  // could ever register. When the same set of stats is already rendered,
+  // update values/colors in place instead of touching the DOM structure.
+  if (debugListMatches(resultContent, result.debug)) {
+    resultContent.querySelector('.swatch').style.background = swatchColor;
+    const numberEl = resultContent.querySelector('.number');
+    numberEl.textContent = numberText;
+    numberEl.className = `number ${isCorrect ? 'match' : 'mismatch'}`;
+    resultContent.querySelector('.label').textContent = `${result.colorLabel}・${result.typeLabel}`;
+    if (result.debug) updateDebugListValues(resultContent, result.debug);
+    return;
+  }
 
   resultContent.innerHTML = `
     <div class="result-grid">
@@ -138,14 +155,21 @@ function renderResult(result, truth) {
         <div class="number ${isCorrect ? 'match' : 'mismatch'}">${numberText}</div>
         <div class="label">${result.colorLabel}・${result.typeLabel}</div>
       </div>
-      <ul class="debug-list">${debugLines}</ul>
+      <ul class="debug-list">${buildDebugListHtml(result.debug)}</ul>
     </div>
   `;
+
+  wireDebugRowHover(resultContent, (category) => {
+    hoveredBallCategory = category;
+    redrawBallOverlay();
+  });
 }
 
 // ---- three.js rotatable ball preview ----
 
 const ballCanvas = document.getElementById('ball-canvas');
+const ballOverlayCanvas = document.getElementById('ball-overlay-canvas');
+const ballOverlayCtx = ballOverlayCanvas.getContext('2d');
 const renderer = new THREE.WebGLRenderer({
   canvas: ballCanvas,
   antialias: true,
@@ -153,6 +177,21 @@ const renderer = new THREE.WebGLRenderer({
   preserveDrawingBuffer: true,
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+/** @type {{width: number, height: number, categoryMap: Uint8Array} | null} */
+let lastBallCrop = null;
+let hoveredBallCategory = null;
+
+function redrawBallOverlay() {
+  ballOverlayCtx.clearRect(0, 0, ballOverlayCanvas.width, ballOverlayCanvas.height);
+  if (hoveredBallCategory === null || !lastBallCrop) return;
+  const maskCanvas = buildHighlightMaskCanvas(lastBallCrop, hoveredBallCategory);
+  // The analysis frame is a square render of the whole visible ball, same
+  // aspect as the (CSS-enforced square) display canvas, so it can just be
+  // stretched to fill — no bbox positioning needed like the sim panel.
+  const rect = ballCanvas.getBoundingClientRect();
+  ballOverlayCtx.drawImage(maskCanvas, 0, 0, rect.width, rect.height);
+}
 
 const scene = new THREE.Scene();
 scene.background = null;
@@ -287,6 +326,8 @@ function loadBall(ballKey) {
   currentBallKey = ballKey;
   sphere.rotation.set(0, 0, 0);
   spinVelocity = { x: 0, y: 0 };
+  hoveredBallCategory = null;
+  redrawBallOverlay();
   let textureCanvas = textureCache.get(ballKey);
   if (!textureCanvas) {
     textureCanvas = createBallTexture(ballKey);
@@ -327,6 +368,11 @@ function resizeRenderer() {
   renderer.setSize(rect.width, rect.height, false);
   camera.aspect = rect.width / rect.height;
   camera.updateProjectionMatrix();
+
+  const dpr = window.devicePixelRatio || 1;
+  ballOverlayCanvas.width = rect.width * dpr;
+  ballOverlayCanvas.height = rect.height * dpr;
+  ballOverlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 window.addEventListener('resize', resizeRenderer);
@@ -379,9 +425,21 @@ function runAnalysis() {
   }
 
   const frame = { data: analysisBuffer, width: analysisSize, height: analysisSize };
-  const analysis = isOpenCvReady() ? analyzeBallTextureCv(frame) : analyzeBallTexture(frame);
+  const opts = { trackCategories: true };
+  const analysis = isOpenCvReady() ? analyzeBallTextureCv(frame, opts) : analyzeBallTexture(frame, opts);
   const result = classifyBall(analysis);
   renderResult(result, currentTruth);
+
+  lastBallCrop = analysis?.categoryMap
+    ? { width: analysisSize, height: analysisSize, categoryMap: flipRowsVertically(analysis.categoryMap, analysisSize, analysisSize, 1) }
+    : null;
+  // Note: hover state is intentionally NOT reset here — this runs on a
+  // continuous ~130ms loop, and clearing it every tick would make the
+  // highlight flicker away almost as soon as the user hovers a stat. If
+  // they're currently hovering, redraw with the freshly analyzed pixels
+  // (keeps the highlight in sync as the ball rotates); loadBall() resets
+  // the hover state when the ball itself changes.
+  if (hoveredBallCategory !== null) redrawBallOverlay();
 }
 
 const ANALYSIS_INTERVAL_MS = 130;

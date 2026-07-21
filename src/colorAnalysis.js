@@ -112,8 +112,14 @@ export function analyzeBallTexture(imageData, { trackCategories = false } = {}) 
     if (v < LIT_THRESHOLD) continue; // shadowed, low-confidence for hue/white reading
 
     litCount++;
-    if (s < 0.32 && v > 0.55) {
-      // catches the number-label white, cream-tinted cue ball, and warm/gray specular sheen
+    if (s < 0.32) {
+      // Low saturation alone means "neutral", regardless of exact brightness
+      // within the already-lit range — a v>0.55 sub-requirement here used
+      // to force moderately-lit near-gray pixels (e.g. a cue ball's dimmer
+      // areas, s≈0.06 but v≈0.5) into the chromatic bucket just for not
+      // being bright enough, which is wrong: they're clearly neutral, not
+      // colorful, and it was inflating chromaticRatio enough to break the
+      // cue-ball detection gate below.
       whiteCount++;
       if (categoryMap) categoryMap[i] = 2;
       continue;

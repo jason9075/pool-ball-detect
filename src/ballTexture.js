@@ -51,6 +51,68 @@ export function getBallDef(ballKey) {
   };
 }
 
+/** @param {string} hex e.g. "#141414" */
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
+ * Standard 6-dot measuring/spot cue ball: dots at the 6 vertices of an
+ * octahedron (top, bottom, and 4 mutually-perpendicular points around the
+ * equator) so at least one dot is visible from any viewing angle, and a
+ * spinning ball traces a clear pattern for reading side/top/backspin.
+ *
+ * Drawn per-pixel by checking each pixel's true 3D direction against each
+ * dot's direction (not a 2D circle in texture space) — a naive UV-space
+ * circle would be badly distorted near the poles, where the equirectangular
+ * mapping compresses a whole ring of longitude into a few pixel rows.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} width
+ * @param {number} height
+ */
+function drawMeasuringDots(ctx, width, height) {
+  const directions = [
+    [0, 1, 0],
+    [0, -1, 0],
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+  const dotAngularRadius = (10 * Math.PI) / 180;
+  const cosThreshold = Math.cos(dotAngularRadius);
+  const [inkR, inkG, inkB] = hexToRgb(INK);
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const { data } = imageData;
+
+  for (let y = 0; y < height; y++) {
+    const theta = ((y + 0.5) / height) * Math.PI;
+    const sinTheta = Math.sin(theta);
+    const cosTheta = Math.cos(theta);
+    for (let x = 0; x < width; x++) {
+      const phi = ((x + 0.5) / width) * Math.PI * 2;
+      const dirX = sinTheta * Math.cos(phi);
+      const dirY = cosTheta;
+      const dirZ = sinTheta * Math.sin(phi);
+
+      const isDot = directions.some(
+        ([dx, dy, dz]) => dirX * dx + dirY * dy + dirZ * dz > cosThreshold,
+      );
+      if (isDot) {
+        const idx = (y * width + x) * 4;
+        data[idx] = inkR;
+        data[idx + 1] = inkG;
+        data[idx + 2] = inkB;
+        data[idx + 3] = 255;
+      }
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
 /**
  * Draws one white number-label circle (white disc + black ring + digits)
  * centered at (cx, cy) with the given radius.
@@ -91,10 +153,7 @@ export function createBallTexture(ballKey) {
   if (ballKey === 'cue') {
     ctx.fillStyle = WHITE;
     ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = INK;
-    ctx.beginPath();
-    ctx.arc(width * 0.5, height * 0.24, height * 0.02, 0, Math.PI * 2);
-    ctx.fill();
+    drawMeasuringDots(ctx, width, height);
     return canvas;
   }
 

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { analyzeBallTexture, classifyBall, hsvToHex } from './colorAnalysis.js';
 import { createBallTexture, getBallDef } from './ballTexture.js';
+import hdrUrl from '../assets/cowboy_town_saloon_1k.hdr?url';
 
 const IMAGE_URL = '/pool_balls.jpg';
 
@@ -151,8 +153,13 @@ scene.background = null;
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(0, 0.9, 2.7);
 
+// Rotation is done by spinning the ball mesh itself (see the drag handlers
+// below), not by orbiting the camera — with a skybox in the background,
+// orbiting the camera would make the room appear to swing around the
+// ball, which looks wrong. OrbitControls is kept only for scroll-to-zoom.
 const controls = new OrbitControls(camera, ballCanvas);
 controls.enableDamping = true;
+controls.enableRotate = false;
 controls.enablePan = false;
 controls.minDistance = 1.5;
 controls.maxDistance = 6;
@@ -171,8 +178,57 @@ scene.add(fillLight);
 
 const sphereGeometry = new THREE.SphereGeometry(1, 64, 64);
 const sphereMaterial = new THREE.MeshStandardMaterial({ roughness: 0.6 });
+// Full strength is fine for the visible display — runAnalysis() strips
+// scene.environment out for its own offscreen render, so this never
+// touches the HSV thresholds the classifier is calibrated against.
+sphereMaterial.envMapIntensity = 1;
 const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
 scene.add(sphere);
+
+// ---- drag-to-spin the ball (camera and background stay put) ----
+
+const SPIN_SPEED = 0.006; // radians of ball rotation per pixel of drag
+const SPIN_DAMPING = 0.92; // per-frame velocity decay once the drag ends
+
+let isSpinning = false;
+let lastPointerPos = { x: 0, y: 0 };
+let spinVelocity = { x: 0, y: 0 };
+
+ballCanvas.addEventListener('pointerdown', (event) => {
+  isSpinning = true;
+  lastPointerPos = { x: event.clientX, y: event.clientY };
+  spinVelocity = { x: 0, y: 0 };
+  ballCanvas.setPointerCapture(event.pointerId);
+});
+
+ballCanvas.addEventListener('pointermove', (event) => {
+  if (!isSpinning) return;
+  const dx = event.clientX - lastPointerPos.x;
+  const dy = event.clientY - lastPointerPos.y;
+  lastPointerPos = { x: event.clientX, y: event.clientY };
+
+  spinVelocity = { x: dy * SPIN_SPEED, y: dx * SPIN_SPEED };
+  sphere.rotation.x += spinVelocity.x;
+  sphere.rotation.y += spinVelocity.y;
+});
+
+const stopSpinning = () => {
+  isSpinning = false;
+};
+ballCanvas.addEventListener('pointerup', stopSpinning);
+ballCanvas.addEventListener('pointercancel', stopSpinning);
+
+// Skybox + image-based "dome light" — the crisp equirect texture is used
+// for the visible background, while a PMREM-filtered version drives
+// environment lighting/reflections on the material.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+new RGBELoader().load(hdrUrl, (hdrTexture) => {
+  hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+  scene.background = hdrTexture;
+  scene.environment = pmremGenerator.fromEquirectangular(hdrTexture).texture;
+  pmremGenerator.dispose();
+});
 
 /** @type {Map<number|'cue', HTMLCanvasElement>} */
 const textureCache = new Map();
@@ -182,6 +238,8 @@ let currentTruth = null;
 /** @param {number|'cue'} ballKey */
 function loadBall(ballKey) {
   currentBallKey = ballKey;
+  sphere.rotation.set(0, 0, 0);
+  spinVelocity = { x: 0, y: 0 };
   let textureCanvas = textureCache.get(ballKey);
   if (!textureCanvas) {
     textureCanvas = createBallTexture(ballKey);
@@ -251,9 +309,20 @@ function linearToSrgb8(channel8) {
 
 function runAnalysis() {
   if (!currentTruth) return;
+  // Analysis must see the ball's calibrated lighting only — the skybox
+  // would leak into the alpha-masked background, and the HDRI env light
+  // washes out the black/white thresholds the classifier is tuned around.
+  // Both are swapped out for this offscreen pass only, then restored so
+  // the interactive display keeps full dome lighting + skybox.
+  const displayBackground = scene.background;
+  const displayEnvironment = scene.environment;
+  scene.background = null;
+  scene.environment = null;
   renderer.setRenderTarget(analysisTarget);
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
+  scene.environment = displayEnvironment;
+  scene.background = displayBackground;
   renderer.readRenderTargetPixels(analysisTarget, 0, 0, analysisSize, analysisSize, analysisBuffer);
 
   for (let i = 0; i < analysisBuffer.length; i += 4) {
@@ -273,6 +342,14 @@ let lastAnalysisTime = 0;
 function animate(time) {
   requestAnimationFrame(animate);
   controls.update();
+
+  if (!isSpinning && (Math.abs(spinVelocity.x) > 0.0001 || Math.abs(spinVelocity.y) > 0.0001)) {
+    sphere.rotation.x += spinVelocity.x;
+    sphere.rotation.y += spinVelocity.y;
+    spinVelocity.x *= SPIN_DAMPING;
+    spinVelocity.y *= SPIN_DAMPING;
+  }
+
   renderer.render(scene, camera);
 
   if (currentTruth && time - lastAnalysisTime > ANALYSIS_INTERVAL_MS) {

@@ -87,6 +87,15 @@ main {
   cursor: pointer;
 }
 
+#ball-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+#ball-canvas:active {
+  cursor: grabbing;
+}
+
 #overlay-canvas {
   pointer-events: none;
 }

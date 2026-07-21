@@ -20,7 +20,11 @@ import hdrUrl from '../assets/cowboy_town_saloon_1k.hdr?url';
 // to the hand-rolled analyzer for the few frames before it resolves.
 initOpenCv();
 
-const IMAGE_URL = '/pool_balls.jpg';
+// import.meta.env.BASE_URL is '/' in dev and '/pool-ball-detect/' in the
+// GitHub Pages build (matches vite.config.js's `base`) — a hardcoded
+// '/pool_balls.jpg' resolved against the domain root and 404'd once
+// deployed to that subpath.
+const IMAGE_URL = `${import.meta.env.BASE_URL}pool_balls.jpg`;
 
 // Grid layout of the reference photo, used only to map a click position to
 // a ball identity — pixel colors from the photo itself are never analyzed.

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>撞球顏色辨識器</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>撞球顏色辨識器</h1>
+        <p class="hint">
+          左側照片只是用來挑球的參考圖 —— 點一下任一顆球，右側會載入該球「完整建模」的 3D
+          球體（不是照片裁圖，因此球的每一面都有正確的顏色資訊）。下方的判定結果<strong
+            >即時反映目前鏡頭正對的那一面</strong
+          >，旋轉球體就能看到判定跟著變化。提示：紅色的 3 號（實色）跟 11 號（花色）色相相同，
+          但 11 號在色塊邊緣會有一圈細細的黑色分隔線，轉到能看到白色球帽或黑色分隔線的角度就能分辨。
+        </p>
+      </header>
+
+      <main>
+        <section class="panel" id="source-panel">
+          <h2>1. 點選要載入的球</h2>
+          <div class="canvas-wrap">
+            <canvas id="source-canvas"></canvas>
+            <canvas id="overlay-canvas"></canvas>
+          </div>
+        </section>
+
+        <section class="panel" id="preview-panel">
+          <h2>2. 3D 旋轉預覽</h2>
+          <div class="canvas-wrap">
+            <canvas id="ball-canvas"></canvas>
+          </div>
+          <p class="hint small" id="selection-caption">你選擇的是：#1（黃色・實色）</p>
+          <p class="hint small">拖曳滾動滾輪縮放，拖曳左鍵旋轉球體。</p>
+        </section>
+      </main>
+
+      <section class="panel" id="result-panel">
+        <h2>3. 目前這一面的顏色分析結果</h2>
+        <div id="result-content">
+          <p class="placeholder">請先在左側圖片上點選一顆球。</p>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

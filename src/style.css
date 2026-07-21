@@ -1,0 +1,148 @@
+:root {
+  color-scheme: dark;
+  --bg: #14161a;
+  --panel: #1c1f26;
+  --border: #2b2f38;
+  --text: #e7e9ee;
+  --muted: #9aa0ac;
+  --accent: #5eb3ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
+}
+
+#app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+}
+
+.hint {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 20px;
+}
+
+.hint.small {
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 760px) {
+  main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.panel h2 {
+  font-size: 1rem;
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.canvas-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #0c0d10;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.canvas-wrap canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#source-canvas {
+  cursor: pointer;
+}
+
+#overlay-canvas {
+  pointer-events: none;
+}
+
+#result-panel {
+  margin-top: 16px;
+}
+
+.placeholder {
+  color: var(--muted);
+}
+
+.result-grid {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  flex-shrink: 0;
+}
+
+.result-main .number {
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.result-main .number.match {
+  color: #6fe08a;
+}
+
+.result-main .number.mismatch {
+  color: #ff8a8a;
+}
+
+.result-main .label {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.debug-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: grid;
+  gap: 2px;
+}
+
+.error-text {
+  color: #ff8a8a;
+}

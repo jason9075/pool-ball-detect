@@ -54,17 +54,24 @@ function rgbToHsv(r, g, b) {
  * @property {number} blackRatio
  * @property {number} chromaticRatio
  * @property {{hue: number, sat: number, val: number} | null} dominant
+ * @property {Uint8Array | null} categoryMap - per-pixel 0=excluded/1=black/2=white/3=chromatic, only when requested
  */
 
 /**
  * Scans a cropped ball ImageData (alpha=0 outside the selection circle)
  * and summarizes its color composition.
  * @param {ImageData} imageData
+ * @param {object} [options]
+ * @param {boolean} [options.trackCategories] - populate the returned categoryMap
  * @returns {BallAnalysis | null}
  */
-export function analyzeBallTexture(imageData) {
+export function analyzeBallTexture(imageData, { trackCategories = false } = {}) {
   const { data, width, height } = imageData;
   const pixelCount = width * height;
+  // Per-pixel category codes, only populated when requested: 0 = excluded
+  // (background/specular/too-dim-to-classify), 1 = black, 2 = white,
+  // 3 = chromatic. Lets a caller visualize which pixels fed which stat.
+  const categoryMap = trackCategories ? new Uint8Array(pixelCount) : null;
 
   // A single fixed-angle photo of a glossy sphere is lit from one side, so
   // roughly half the ball falls into deep shadow regardless of its true
@@ -99,6 +106,7 @@ export function analyzeBallTexture(imageData) {
     if (v < 0.22) {
       // glossy black balls show a wide range of dark reflections, not just near-pure-black
       blackCount++;
+      if (categoryMap) categoryMap[i] = 1;
       continue;
     }
     if (v < LIT_THRESHOLD) continue; // shadowed, low-confidence for hue/white reading
@@ -107,10 +115,12 @@ export function analyzeBallTexture(imageData) {
     if (s < 0.32 && v > 0.55) {
       // catches the number-label white, cream-tinted cue ball, and warm/gray specular sheen
       whiteCount++;
+      if (categoryMap) categoryMap[i] = 2;
       continue;
     }
 
     chromaticCount++;
+    if (categoryMap) categoryMap[i] = 3;
     const bin = Math.min(HUE_BINS - 1, Math.floor(h / 10));
     const weight = s * v;
     binWeight[bin] += weight;
@@ -145,6 +155,7 @@ export function analyzeBallTexture(imageData) {
     whiteRatio: litCount > 0 ? whiteCount / litCount : 0,
     chromaticRatio: litCount > 0 ? chromaticCount / litCount : 0,
     dominant,
+    categoryMap,
   };
 }
 
@@ -181,9 +192,15 @@ function hueToColorKey(hue, sat) {
 
 /**
  * @param {BallAnalysis | null} analysis
+ * @param {object} [options]
+ * @param {number} [options.stripeBlackThreshold] - blackRatio above this
+ *   reads as a visible stripe cap. Higher than the default is appropriate
+ *   for noisier crops (e.g. a raw rectangular bbox with background
+ *   corners included) where some baseline black is just interference,
+ *   not the ball itself.
  * @returns {BallClassification}
  */
-export function classifyBall(analysis) {
+export function classifyBall(analysis, { stripeBlackThreshold = 0.12 } = {}) {
   if (!analysis) {
     return { ok: false, reason: '目前角度可分析的像素不足，請旋轉球體。' };
   }
@@ -230,7 +247,7 @@ export function classifyBall(analysis) {
   // traditional white cap), so a visible cap shows up as extra black
   // beyond the small amount every ball has from its label's ring/digit.
   const entry = COLOR_TABLE[colorKey];
-  const isStripe = blackRatio > 0.12;
+  const isStripe = blackRatio > stripeBlackThreshold;
   const number = isStripe ? entry.stripe : entry.solid;
 
   return {

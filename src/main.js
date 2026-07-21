@@ -3,7 +3,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { analyzeBallTexture, classifyBall, hsvToHex } from './colorAnalysis.js';
 import { createBallTexture, getBallDef } from './ballTexture.js';
+import { initTableSimulation } from './tableSimulation.js';
+import { initOpenCv, isOpenCvReady, analyzeBallTextureCv } from './openCvAnalysis.js';
 import hdrUrl from '../assets/cowboy_town_saloon_1k.hdr?url';
+
+// OpenCV.js is a ~10MB WASM download — start fetching it immediately so
+// it's ready well before the user finishes picking a ball, but fall back
+// to the hand-rolled analyzer for the few frames before it resolves.
+initOpenCv();
 
 const IMAGE_URL = '/pool_balls.jpg';
 
@@ -177,7 +184,14 @@ fillLight.position.set(-2, -1, -3);
 scene.add(fillLight);
 
 const sphereGeometry = new THREE.SphereGeometry(1, 64, 64);
-const sphereMaterial = new THREE.MeshStandardMaterial({ roughness: 0.6 });
+// Higher than a real glossy ball would be — gives a small but measurable
+// improvement in how much of a dark, saturated color (brown, green) reads
+// as its true hue rather than washed-out gray. That gray band turned out
+// to come mostly from ambient light's flat contribution dominating near
+// the grazing-angle/silhouette edge, not from specular sheen — lowering
+// ambient to fix it pushes those same regions below the "lit enough to
+// classify" cutoff instead, which is worse, so this is a partial mitigation.
+const sphereMaterial = new THREE.MeshStandardMaterial({ roughness: 0.85 });
 // Full strength is fine for the visible display — runAnalysis() strips
 // scene.environment out for its own offscreen render, so this never
 // touches the HSV thresholds the classifier is calibrated against.
@@ -218,22 +232,55 @@ const stopSpinning = () => {
 ballCanvas.addEventListener('pointerup', stopSpinning);
 ballCanvas.addEventListener('pointercancel', stopSpinning);
 
+/** @type {Map<number|'cue', HTMLCanvasElement>} */
+const textureCache = new Map();
+/** @type {import('./ballTexture.js').BallDef | null} */
+let currentTruth = null;
+let currentBallKey = null;
+
 // Skybox + image-based "dome light" — the crisp equirect texture is used
 // for the visible background, while a PMREM-filtered version drives
 // environment lighting/reflections on the material.
+/** @type {ReturnType<typeof initTableSimulation> | null} */
+let simulation = null;
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
 pmremGenerator.compileEquirectangularShader();
 new RGBELoader().load(hdrUrl, (hdrTexture) => {
   hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = hdrTexture;
-  scene.environment = pmremGenerator.fromEquirectangular(hdrTexture).texture;
+  const envMap = pmremGenerator.fromEquirectangular(hdrTexture).texture;
+  scene.environment = envMap;
   pmremGenerator.dispose();
+
+  simulation = initTableSimulation({
+    canvas: document.getElementById('sim-canvas'),
+    overlayCanvas: document.getElementById('sim-overlay-canvas'),
+    resultElement: document.getElementById('sim-result-content'),
+    statusElement: document.getElementById('sim-status'),
+    background: hdrTexture,
+    environment: envMap,
+  });
+  if (currentBallKey !== null) {
+    simulation.rollBall(textureCache.get(currentBallKey), currentTruth);
+  }
 });
 
-/** @type {Map<number|'cue', HTMLCanvasElement>} */
-const textureCache = new Map();
-/** @type {import('./ballTexture.js').BallDef | null} */
-let currentTruth = null;
+document.getElementById('sim-replay-button').addEventListener('click', () => {
+  if (simulation && currentBallKey !== null) {
+    simulation.rollBall(textureCache.get(currentBallKey), currentTruth);
+  }
+});
+
+// Spins the HDRI dome (skybox + the lighting/reflections it drives) around
+// the vertical axis only, independent of the ball's own drag-to-spin — lets
+// you see how the ball looks lit from a different direction without
+// changing which face is pointed at the camera.
+document.getElementById('dome-light-slider').addEventListener('input', (event) => {
+  const radians = (Number(event.target.value) * Math.PI) / 180;
+  scene.environmentRotation.y = radians;
+  scene.backgroundRotation.y = radians;
+  runAnalysis();
+});
 
 /** @param {number|'cue'} ballKey */
 function loadBall(ballKey) {
@@ -266,9 +313,9 @@ function loadBall(ballKey) {
   selectionCaption.textContent = `你選擇的是：${numberText}（${currentTruth.colorLabel}・${currentTruth.typeLabel}）`;
 
   runAnalysis();
+  if (simulation) simulation.rollBall(textureCanvas, currentTruth);
 }
 
-let currentBallKey = null;
 ballCanvas.addEventListener('webglcontextrestored', () => {
   // GPU-side texture uploads from before the loss are gone; reload the
   // current ball fresh so the restored context has correct texture data.
@@ -331,7 +378,8 @@ function runAnalysis() {
     analysisBuffer[i + 2] = linearToSrgb8(analysisBuffer[i + 2]);
   }
 
-  const analysis = analyzeBallTexture({ data: analysisBuffer, width: analysisSize, height: analysisSize });
+  const frame = { data: analysisBuffer, width: analysisSize, height: analysisSize };
+  const analysis = isOpenCvReady() ? analyzeBallTextureCv(frame) : analyzeBallTexture(frame);
   const result = classifyBall(analysis);
   renderResult(result, currentTruth);
 }

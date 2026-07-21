@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>撞球顏色辨識器</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%B1</text></svg>"
+    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -35,6 +39,10 @@
           </div>
           <p class="hint small" id="selection-caption">你選擇的是：#1（黃色・實色）</p>
           <p class="hint small">拖曳滾動滾輪縮放，拖曳左鍵旋轉球體。</p>
+          <div class="light-rotate-control">
+            <label for="dome-light-slider">環境光（dome light）水平旋轉</label>
+            <input id="dome-light-slider" type="range" min="0" max="360" value="0" step="1" />
+          </div>
         </section>
       </main>
 
@@ -42,6 +50,28 @@
         <h2>3. 目前這一面的顏色分析結果</h2>
         <div id="result-content">
           <p class="placeholder">請先在左側圖片上點選一顆球。</p>
+        </div>
+      </section>
+
+      <section class="panel" id="sim-panel">
+        <h2>4. 鏡頭模擬（球道 + 固定攝影機辨識）</h2>
+        <p class="hint small">
+          模擬球從球道滾落、停在閥門檔板前的過程；旁邊固定攝影機會框出球的
+          bounding box，直接用這個矩形裁切（不做圓形去背）送進同一套顏色分析——
+          矩形四角會露出後方的 HDRI 場景，當作真實世界攝影機取框時常見的背景干擾。
+        </p>
+        <div class="sim-layout">
+          <div class="canvas-wrap sim-canvas-wrap">
+            <canvas id="sim-canvas"></canvas>
+            <canvas id="sim-overlay-canvas"></canvas>
+          </div>
+          <div class="sim-result">
+            <button id="sim-replay-button" type="button">重新模擬滾球</button>
+            <div id="sim-status" class="hint small">請先選擇一顆球。</div>
+            <div id="sim-result-content">
+              <p class="placeholder">球停止後，這裡會顯示 bbox 裁切的分析結果。</p>
+            </div>
+          </div>
         </div>
       </section>
     </div>

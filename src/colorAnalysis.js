@@ -226,8 +226,11 @@ export function classifyBall(analysis) {
     };
   }
 
+  // Stripe balls are colored-band + black cap in this set (not the
+  // traditional white cap), so a visible cap shows up as extra black
+  // beyond the small amount every ball has from its label's ring/digit.
   const entry = COLOR_TABLE[colorKey];
-  const isStripe = whiteRatio > 0.25;
+  const isStripe = blackRatio > 0.12;
   const number = isStripe ? entry.stripe : entry.solid;
 
   return {

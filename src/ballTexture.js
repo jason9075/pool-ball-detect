@@ -104,21 +104,17 @@ export function createBallTexture(ballKey) {
   const color = BASE_COLORS[baseNumber].hex;
 
   if (isStripe) {
-    ctx.fillStyle = WHITE;
+    // Matches the reference photo: the area outside the colored band is
+    // black (not the traditional tournament-set white cap) — this is the
+    // detail that lets color analysis tell e.g. 3 (solid) from 11 (stripe)
+    // apart even when both look like a plain patch of the same red hue.
+    ctx.fillStyle = INK;
     ctx.fillRect(0, 0, width, height);
 
     const bandTop = height * 0.28;
     const bandBottom = height * 0.72;
     ctx.fillStyle = color;
     ctx.fillRect(0, bandTop, width, bandBottom - bandTop);
-
-    // thin black seam where the colored band meets the white cap — the
-    // detail that lets color analysis tell e.g. 3 (solid) from 11 (stripe)
-    // apart even when both look like a plain patch of the same red hue.
-    const seam = height * 0.02;
-    ctx.fillStyle = INK;
-    ctx.fillRect(0, bandTop - seam / 2, width, seam);
-    ctx.fillRect(0, bandBottom - seam / 2, width, seam);
   } else {
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, width, height);
